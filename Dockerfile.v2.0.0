@@ -1,8 +1,8 @@
 FROM ubuntu:20.04
 
-LABEL SOFTWARE_NAME ubuntu 20.04
+LABEL SOFTWARE_NAME LINKS
 LABEL MAINTAINER "Tom Harrop"
-LABEL VERSION "ubuntu 20.04"
+LABEL VERSION "v2.0.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LC_ALL=C
@@ -22,12 +22,23 @@ RUN     . /etc/os-release \
         apt-get upgrade -y --fix-missing
 
 RUN     apt-get update && apt-get install -y  --no-install-recommends \
-            autoconf \
-            autotools-dev \
+            automake \
             build-essential \
             git \
             wget
 
+RUN     git clone \
+            --recursive \
+            https://github.com/bcgsc/LINKS.git \
+            /links
 
+WORKDIR /links
 
-ENTRYPOINT ["/usr/bin/cat /etc/os-release"]
+RUN     git checkout -f v2.0.0 && \
+        git submodule update --init --recursive
+
+RUN     ./autogen.sh && ./configure && make
+
+ENV PATH="${PATH}:/links/bin"
+
+ENTRYPOINT ["/links/bin/LINKS"]
