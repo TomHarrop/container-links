@@ -30,9 +30,10 @@ def resolve_remote(wildcards):
 # GLOBALS #
 ###########
 
+bbmap = 'docker://ghcr.io/deardenlab/container-bbmap:bbmap_38.90'
 links = 'docker://ghcr.io/tomharrop/container-links:v2.0.0'
 minimap = 'shub://TomHarrop/singularity-containers:minimap2_2.17r941'
-samtools = 'docker://ghcr.io/deardenlab/container-samtools:samtools_1.12'
+samtools = 'docker://ghcr.io/deardenlab/container-samtools:1.14'
 
 HTTP = HTTPRemoteProvider()
 
@@ -42,14 +43,71 @@ HTTP = HTTPRemoteProvider()
 
 rule make_test_data:
     input:
-        # expand('output/010_links/{type}/contig_line.txt',
+        # expand('output/020_mapping/{type}/reads.fa.gz',
         #        type=['contigs', 'scaffolds']),
-        # expand('output/020_mapping/{type}/aln.sorted.bam',
-        #        type=['contigs', 'scaffolds'])
-        expand('output/020_mapping/{type}/reads.txt',
+        # expand('output/010_links/{type}/used_contigs.fa.gz',
+        #        type=['contigs', 'scaffolds']),
+        expand('output/030_links-subset/{type}/links.scaffolds.fa',
                type=['contigs', 'scaffolds']),
 
-# extract reads from region
+
+# run links again
+rule links_subset:
+    input:
+        fa = 'output/010_links/{type}/used_contigs.fa.gz',
+        reads = 'output/020_mapping/{type}/reads.fa.gz',
+        fof = 'output/030_links-subset/{type}.fof'
+    output:
+        'output/030_links-subset/{type}/links.scaffolds.fa',
+        'output/030_links-subset/{type}/links.assembly_correspondence.tsv'
+    params:
+        wd = 'output/030_links-subset/{type}',
+        fa = lambda wildcards, input: Path(input.fa).resolve(),
+        fof = lambda wildcards, input: Path(input.fof).resolve(),
+    log:
+        Path('output/logs/links_subset.{type}.log').resolve()
+    container:
+        links
+    shell:
+        'cd {params.wd} || exit 1 ; '
+        'LINKS '
+        '-f {params.fa} '
+        '-s {params.fof} '
+        '-b links '
+        '&> {log}'
+
+rule make_subset_fof:
+    input:
+        reads = 'output/020_mapping/{type}/reads.fa.gz'
+    output:
+        fof = 'output/030_links-subset/{type}.fof'
+    params:
+        reads = lambda wildcards, input: Path(input.reads).resolve().as_posix()
+    shell:
+        'echo {params.reads} > {output.fof}'
+
+# get identified read from raw file
+rule filter_reads:
+    input:
+        reads = 'data/K12_full2dONT_longread.fa',
+        names = 'output/020_mapping/{type}/reads.txt'
+    output:
+        'output/020_mapping/{type}/reads.fa.gz'
+    log:
+        'output/logs/filter_reads.{type}.log'
+    container:
+        bbmap
+    shell:
+        'filterbyname.sh '
+        'in={input.reads} '
+        'names={input.names} '
+        'out={output} '
+        'include=t '
+        'zl=9 '
+        '2> {log}'
+
+
+# extract reads IDs from region
 rule extract_read_ids:
     input:
         'output/020_mapping/{type}/joined_contigs.sam'
@@ -109,6 +167,27 @@ rule map_reads:
         '{input.fa} '
         '{input.reads} '
         '> {output} '
+        '2> {log}'
+
+
+# extract scaffold1 components from the original file
+rule filter_contigs:
+    input:
+        unpack(get_fa),
+        names = 'output/010_links/{type}/contig_list.txt'
+    output:
+        'output/010_links/{type}/used_contigs.fa.gz'
+    log:
+        'output/logs/filter_contigs.{type}.log'
+    container:
+        bbmap
+    shell:
+        'filterbyname.sh '
+        'in={input.fa} '
+        'names={input.names} '
+        'out={output} '
+        'include=t '
+        'zl=9 '
         '2> {log}'
 
 
