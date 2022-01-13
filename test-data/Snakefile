@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
+import tempfile
+
+
+#############
+# FUNCTIONS #
+#############
+
+def get_fa(wildcards):
+    if wildcards.type == 'contigs':
+        return {'fa': 'data/ecoliK12_abyss_illumina_contig_baseline.fa'}
+    elif wildcards.type == 'scaffolds':
+        return {'fa': 'data/ecoliK12_abyss_illumina_scaffold_baseline.fa'}
+    else:
+        raise InputError
+
+
+def resolve_remote(wildcards):
+    return HTTP.remote(
+        ('www.bcgsc.ca/downloads/supplementary/LINKS/'
+         f'{wildcards.file}'),
+        keep_local=True,
+        insecure=True)
+
+
+###########
+# GLOBALS #
+###########
+
+links = 'docker://ghcr.io/tomharrop/container-links:v2.0.0'
+minimap = 'shub://TomHarrop/singularity-containers:minimap2_2.17r941'
+samtools = 'docker://ghcr.io/deardenlab/container-samtools:samtools_1.12'
+
+HTTP = HTTPRemoteProvider()
+
+########
+# MAIN #
+########
+
+rule make_test_data:
+    input:
+        # expand('output/010_links/{type}/contig_line.txt',
+        #        type=['contigs', 'scaffolds']),
+        # expand('output/020_mapping/{type}/aln.sorted.bam',
+        #        type=['contigs', 'scaffolds'])
+        expand('output/020_mapping/{type}/reads.txt',
+               type=['contigs', 'scaffolds']),
+
+# extract reads from region
+rule extract_read_ids:
+    input:
+        'output/020_mapping/{type}/joined_contigs.sam'
+    output:
+        'output/020_mapping/{type}/reads.txt'
+    log:
+        'output/logs/extract_read_ids.{type}.log'
+    container:
+        samtools
+    shell:
+        'samtools view  {input} '
+        '| cut -f1 '
+        '| sort '
+        '| uniq '
+        '> {output} '
+        '2> {log}'
+
+rule subset_bam:
+    input:
+        bam = 'output/020_mapping/{type}/aln.sorted.bam',
+        regions = 'output/010_links/{type}/contig_line.txt'
+    output:
+        'output/020_mapping/{type}/joined_contigs.sam'
+    log:
+        'output/logs/subset_bam.{type}.log'
+    container:
+        samtools
+    shell:
+        'samtools view '
+        '-h '
+        '-F 256 '       # exclude secondary alignments
+        '-O SAM '
+        '{input.bam} '
+        ' $( cat {input.regions} ) '
+        '> {output} '
+        '2> {log}'
+
+
+# map reads to work out which reads made the links
+rule map_reads:
+    input:
+        unpack(get_fa),
+        reads = 'data/K12_full2dONT_longread.fa',
+    output:
+        'output/020_mapping/{type}/aln.sam'
+    log:
+        'output/logs/map_reads.{type}.log'
+    threads:
+        workflow.cores
+    container:
+        minimap
+    shell:
+        'minimap2 '
+        '-a '
+        '-x map-ont '
+        '-t {threads} '
+        '{input.fa} '
+        '{input.reads} '
+        '> {output} '
+        '2> {log}'
+
+
+# extract scaffold1 and the corresponding contigs from
+# 'output/010_links/{type}/links.assembly_correspondence.tsv'
+# grep "scaffold1\s" links.assembly_correspondence.tsv | cut -d'      ' -f3 | cut -d' ' -f1
+rule contig_line:
+    input:
+        'output/010_links/{type}/contig_list.txt'
+    output:
+        'output/010_links/{type}/contig_line.txt'
+    container:
+        samtools
+    shell:
+        'tr \'\\n\' \' \' <  {input} > {output} '  
+
+rule get_contig_list:
+    input:  
+        'output/010_links/{type}/links.assembly_correspondence.tsv'
+    output:
+        'output/010_links/{type}/contig_list.txt'
+    container:
+        links
+    shell:
+        'grep \'scaffold1\\s\' {input} '
+        '| '
+        'cut -d\'\t\' -f3 '
+        '| '
+        'cut -d\' \' -f1 '
+        '> {output}'
+
+
+# run links on the full set to work out which contigs get linked
+rule links_full:
+    input:
+        unpack(get_fa),
+        reads = 'data/K12_full2dONT_longread.fa',
+        fof = 'output/010_links/K12.fof'
+    output:
+        'output/010_links/{type}/links.scaffolds.fa',
+        'output/010_links/{type}/links.assembly_correspondence.tsv'
+    params:
+        wd = 'output/010_links/{type}',
+        fa = lambda wildcards, input: Path(input.fa).resolve(),
+        fof = lambda wildcards, input: Path(input.fof).resolve(),
+    log:
+        Path('output/logs/links_full.{type}.log').resolve()
+    container:
+        links
+    shell:
+        'cd {params.wd} || exit 1 ; '
+        'LINKS '
+        '-f {params.fa} '
+        '-s {params.fof} '
+        '-b links '
+        '&> {log}'
+
+rule make_fof:
+    input:
+        reads = 'data/K12_full2dONT_longread.fa'
+    output:
+        fof = 'output/010_links/K12.fof'
+    params:
+        reads = lambda wildcards, input: Path(input.reads).resolve().as_posix()
+    shell:
+        'echo {params.reads} > {output.fof}'
+
+
+###########
+# GENERIC #
+###########
+
+rule sort:
+    input:
+        'output/{folder}/{file}.bam'
+    output:
+        bam = 'output/{folder}/{file}.sorted.bam',
+        bai = 'output/{folder}/{file}.sorted.bam.bai'
+    log:
+        'output/logs/sort.{folder}.{file}.log'
+    threads:
+        min(workflow.cores, 4)
+    container:
+        samtools
+    shell:
+        'samtools sort '
+        '-@ {threads} '
+        '-l 9 '
+        '-o {output.bam} '
+        '-T ' + tempfile.mktemp() + ' '
+        '{input} '
+        '2> {log} '
+        '; '
+        'samtools index {output}'
+
+rule sam_to_bam:
+    input:
+        'output/{folder}/{file}.sam'
+    output:
+        pipe('output/{folder}/{file}.bam')
+    log:
+        'output/logs/sam_to_bam.{folder}.{file}.log'
+    threads:
+        1
+    container:
+        samtools
+    shell:
+        'samtools view -bh -u {input} '
+        '>> {output} '
+        '2> {log}'
+
+
+rule get_file:
+    input:
+        resolve_remote
+    output:
+        'data/{file}'
+    shell:
+        'cp {input} {output}'
+
