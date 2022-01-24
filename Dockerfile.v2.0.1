@@ -2,7 +2,7 @@ FROM ubuntu:20.04
 
 LABEL SOFTWARE_NAME LINKS
 LABEL MAINTAINER "Tom Harrop"
-LABEL VERSION "v2.0.0"
+LABEL VERSION "v2.0.1"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LC_ALL=C
@@ -34,7 +34,7 @@ RUN     git clone \
 
 WORKDIR /links
 
-RUN     git checkout -f v2.0.0 && \
+RUN     git checkout -f v2.0.1 && \
         git submodule update --init --recursive
 
 RUN     ./autogen.sh && ./configure && make
