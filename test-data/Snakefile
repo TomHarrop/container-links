@@ -31,7 +31,7 @@ def resolve_remote(wildcards):
 ###########
 
 bbmap = 'docker://ghcr.io/deardenlab/container-bbmap:bbmap_38.90'
-links = 'docker://ghcr.io/tomharrop/container-links:v2.0.0'
+links = 'docker://ghcr.io/tomharrop/container-links:v2.0.1-1'
 minimap = 'shub://TomHarrop/singularity-containers:minimap2_2.17r941'
 samtools = 'docker://ghcr.io/deardenlab/container-samtools:1.14'
 
