@@ -3,6 +3,7 @@ FROM ubuntu:20.04
 LABEL SOFTWARE_NAME LINKS
 LABEL MAINTAINER "Tom Harrop"
 LABEL VERSION "v2.0.1"
+LABEL org.opencontainers.image.source "https://github.com/TomHarrop/container-links"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LC_ALL=C
@@ -37,8 +38,9 @@ WORKDIR /links
 RUN     git checkout -f v2.0.1 && \
         git submodule update --init --recursive
 
-RUN     ./autogen.sh && ./configure && make
+RUN     ./autogen.sh && ./configure && make && make install
 
-ENV PATH="${PATH}:/links/bin"
+WORKDIR /
+RUN     rm -rf /links
 
-ENTRYPOINT ["/links/bin/LINKS"]
+ENTRYPOINT ["/usr/local/bin/LINKS"]
