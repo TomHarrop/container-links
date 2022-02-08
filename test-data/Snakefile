@@ -41,14 +41,124 @@ HTTP = HTTPRemoteProvider()
 # MAIN #
 ########
 
+n_chunks = 2
+all_chunks = [str(x) for x in range(0, n_chunks)]
+
+
 rule make_test_data:
     input:
-        # expand('output/020_mapping/{type}/reads.fa.gz',
-        #        type=['contigs', 'scaffolds']),
-        # expand('output/010_links/{type}/used_contigs.fa.gz',
-        #        type=['contigs', 'scaffolds']),
         expand('output/030_links-subset/{type}/links.scaffolds.fa',
                type=['contigs', 'scaffolds']),
+        expand('output/040_chunks/{type}/links.scaffolds.fa',
+               type=['contigs', 'scaffolds']),
+        expand('output/050_rechunk/{type}/links.scaffolds.fa',
+               type=['contigs', 'scaffolds'])
+
+
+
+# rechunk to double check
+rule links_rechunk:
+    input:
+        fa = 'output/010_links/{type}/used_contigs.fa.gz',
+        reads = 'output/050_rechunk/{type}/reads.fa.gz',
+        fof = 'output/050_rechunk/{type}.fof'
+    output:
+        'output/050_rechunk/{type}/links.scaffolds.fa',
+        'output/050_rechunk/{type}/links.assembly_correspondence.tsv'
+    params:
+        wd = 'output/050_rechunk/{type}',
+        fa = lambda wildcards, input: Path(input.fa).resolve(),
+        fof = lambda wildcards, input: Path(input.fof).resolve(),
+    log:
+        Path('output/logs/links_rechunk.{type}.log').resolve()
+    container:
+        links
+    shell:
+        'cd {params.wd} || exit 1 ; '
+        'LINKS '
+        '-f {params.fa} '
+        '-s {params.fof} '
+        '-b links '
+        '&> {log}'
+
+
+rule make_rechunk_fof:
+    input:
+        'output/050_rechunk/{type}/reads.fa.gz'
+    output:
+        fof = 'output/050_rechunk/{type}.fof'
+    shell:
+        'readlink -f {input} > {output.fof}'
+
+rule rechunk:
+    input:
+        expand('output/040_chunks/{{type}}/chunk_{chunk}.fa.gz',
+               chunk=all_chunks)
+    output:
+        'output/050_rechunk/{type}/reads.fa.gz'
+    shell:
+        'cat {input} > {output}'
+
+
+# chunk reads to compare
+rule links_chunks:
+    input:
+        fa = 'output/010_links/{type}/used_contigs.fa.gz',
+        reads = expand(
+            'output/040_chunks/{{type}}/chunk_{chunk}.fa.gz',
+            chunk=all_chunks),
+        fof = 'output/040_chunks/{type}.fof'
+    output:
+        'output/040_chunks/{type}/links.scaffolds.fa',
+        'output/040_chunks/{type}/links.assembly_correspondence.tsv'
+    params:
+        wd = 'output/040_chunks/{type}',
+        fa = lambda wildcards, input: Path(input.fa).resolve(),
+        fof = lambda wildcards, input: Path(input.fof).resolve(),
+    log:
+        Path('output/logs/links_chunks.{type}.log').resolve()
+    container:
+        links
+    shell:
+        'cd {params.wd} || exit 1 ; '
+        'LINKS '
+        '-f {params.fa} '
+        '-s {params.fof} '
+        '-b links '
+        '&> {log}'
+
+
+rule make_chunk_fof:
+    input:
+        expand('output/040_chunks/{{type}}/chunk_{chunk}.fa.gz',
+               chunk=all_chunks)
+    output:
+        fof = 'output/040_chunks/{type}.fof'
+    shell:
+        'readlink -f {input} > {output.fof}'
+
+
+rule partition:
+    input:
+        reads = 'output/020_mapping/{type}/reads.fa.gz'
+    output:
+        expand('output/040_chunks/{{type}}/chunk_{chunk}.fa.gz',
+               chunk=all_chunks)
+    params:
+        outfile = 'output/040_chunks/{type}/chunk_%.fa.gz',
+        ways = n_chunks,
+        mem_gb = 16
+    log:
+        'output/logs/partition.{type}.log'
+    container:
+        bbmap
+    shell:
+        'partition.sh '
+        'in={input} '
+        'out={params.outfile} '
+        'ways={params.ways} '
+        '-Xmx={params.mem_gb}g '
+        '2> {log}'
 
 
 # run links again
