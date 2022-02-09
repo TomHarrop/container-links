@@ -2,7 +2,7 @@ FROM ubuntu:20.04
 
 LABEL SOFTWARE_NAME LINKS
 LABEL MAINTAINER "Tom Harrop"
-LABEL VERSION "v2.0.1"
+LABEL VERSION "ab54b4a"
 LABEL org.opencontainers.image.source "https://github.com/TomHarrop/container-links"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -35,7 +35,7 @@ RUN     git clone \
 
 WORKDIR /links
 
-RUN     git checkout -f v2.0.1 && \
+RUN     git checkout -f ab54b4a && \
         git submodule update --init --recursive
 
 RUN     ./autogen.sh && ./configure && make && make install
