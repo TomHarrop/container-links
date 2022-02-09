@@ -35,7 +35,8 @@ RUN     git clone \
 
 WORKDIR /links
 
-RUN     git checkout -f ab54b4a && \
+RUN     git fetch && \
+        git checkout -f ab54b4a && \
         git submodule update --init --recursive
 
 RUN     ./autogen.sh && ./configure && make && make install
